@@ -1,13 +1,30 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import "./App.css";
+import VesselSelection from "./components/VesselSelection";
+import SyncStatus from "./components/SyncStatus";
+import Settings from "./components/Settings";
+import { getCompartments, hasVesselData, getVesselInfo } from "./db/database";
+import { calculateSounding } from "./utils/interpolation";
+import { useOnlineStatus } from "./hooks/useOnlineStatus";
+import { v4 as uuidv4 } from "uuid";
+import { getLambdaUrl, saveLambdaUrl, logConfig } from "./config";
 
 function App() {
   // Connection and compartments
-  const [lambdaUrl, setLambdaUrl] = useState("");
-  const [connected, setConnected] = useState(false);
+  const [lambdaUrl, setLambdaUrl] = useState(() => getLambdaUrl() || "");
+  const [connected, setConnected] = useState(() => !!getLambdaUrl());
   const [compartments, setCompartments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [vesselSelected, setVesselSelected] = useState(false);
+  const [currentVessel, setCurrentVessel] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const isOnline = useOnlineStatus();
+  const fuelGrades = ["HSFO", "VLSFO", "ULSFO", "LSMGO", "MGO", "BIOFUEL"];
+  
+  // Submit state
+  const [submitStatus, setSubmitStatus] = useState({ message: "", type: "" });
 
   // Sounding tab state
   const [activeTab, setActiveTab] = useState("sounding");
@@ -16,7 +33,6 @@ function App() {
   );
   const [globalTrim, setGlobalTrim] = useState("");
   const [globalHeel, setGlobalHeel] = useState("");
-  const fuelGrades = ["HSFO", "VLSFO", "ULSFO", "LSMGO", "MGO", "BIOFUEL"];
   const [tankEntries, setTankEntries] = useState([
     {
       id: Date.now(),
@@ -56,7 +72,33 @@ function App() {
     },
   ]);
 
-  // Connect to Lambda and fetch compartments
+  // Check for vessel data on mount and log configuration
+  useEffect(() => {
+    logConfig(); // Log app configuration
+    checkVesselData();
+  }, []);
+
+  async function checkVesselData() {
+    const hasData = await hasVesselData();
+    if (hasData) {
+      const vessel = await getVesselInfo();
+      setCurrentVessel(vessel);
+      setVesselSelected(true);
+      await loadCompartmentsFromDB();
+    }
+  }
+
+  async function loadCompartmentsFromDB() {
+    try {
+      const comps = await getCompartments();
+      setCompartments(comps);
+      console.log(`✓ Loaded ${comps.length} compartments from local database`);
+    } catch (err) {
+      console.error("Error loading compartments:", err);
+    }
+  }
+
+  // Connect to Lambda
   const connectToLambda = async () => {
     if (!lambdaUrl.trim()) {
       setError("Please enter Lambda Function URL");
@@ -65,24 +107,157 @@ function App() {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(lambdaUrl + "/compartments", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCompartments(data.data);
-        setConnected(true);
-        setError("");
-      } else {
-        setError(
-          "Failed to fetch compartments: " + (data.error || "Unknown error")
-        );
+      // Validate URL format
+      const url = new URL(lambdaUrl);
+      if (!url.protocol.startsWith('http')) {
+        throw new Error("Invalid URL protocol");
       }
+      
+      // Save to localStorage for future use
+      saveLambdaUrl(lambdaUrl);
+      
+      setConnected(true);
+      setError("");
+      console.log("✓ Lambda URL saved:", lambdaUrl);
     } catch (err) {
-      setError("Connection failed: " + err.message);
+      setError("Invalid URL: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleVesselSelected = async (vessel) => {
+    setCurrentVessel(vessel);
+    setVesselSelected(true);
+    await loadCompartmentsFromDB();
+  };
+
+  const handleLambdaUrlUpdated = (newUrl) => {
+    setLambdaUrl(newUrl);
+    console.log("✓ Lambda URL updated from settings:", newUrl);
+  };
+
+  const resetConnection = () => {
+    setConnected(false);
+    setVesselSelected(false);
+    setCurrentVessel(null);
+    setCompartments([]);
+  };
+
+  // Submit soundings to cloud (with summary data)
+  const submitSoundingsToCloud = async () => {
+    if (!isOnline) {
+      setSubmitStatus({
+        message: "Cannot submit: You are offline",
+        type: "error",
+      });
+      setTimeout(() => setSubmitStatus({ message: "", type: "" }), 3000);
+      return;
+    }
+
+    // Filter tank entries that have results
+    const completedSoundings = tankEntries.filter(
+      (entry) => entry.result && entry.result.success && entry.compartment_id && entry.fuel_grade
+    );
+
+    if (completedSoundings.length === 0) {
+      setSubmitStatus({
+        message: "No completed calculations to submit",
+        type: "error",
+      });
+      setTimeout(() => setSubmitStatus({ message: "", type: "" }), 3000);
+      return;
+    }
+
+    try {
+      setSubmitStatus({ message: "Submitting...", type: "loading" });
+
+      // Generate a session ID to group all soundings together
+      const sessionId = uuidv4();
+      const systemTimestamp = new Date().toISOString();
+
+      // Prepare individual tank soundings with session ID
+      const soundingsPayload = completedSoundings.map((entry) => {
+        const compartmentName = compartments.find(
+          (c) => c.compartment_id === parseInt(entry.compartment_id)
+        )?.compartment_name || "Unknown";
+
+        return {
+          client_id: uuidv4(),
+          session_id: sessionId, // Group all soundings together
+          compartment_id: parseInt(entry.compartment_id),
+          compartment_name: compartmentName,
+          recorded_at: systemTimestamp, // System date/time
+          report_date: reportDate, // User-selected date
+          ullage: parseFloat(entry.ullage),
+          trim: parseFloat(globalTrim),
+          heel: globalHeel !== "" ? parseFloat(globalHeel) : null,
+          fuel_grade: entry.fuel_grade,
+          density: entry.density ? parseFloat(entry.density) : null,
+          temperature: entry.temp ? parseFloat(entry.temp) : null,
+          base_volume: parseFloat(entry.result.base_volume || entry.result.volume),
+          heel_correction: parseFloat(entry.result.heel_correction || 0),
+          final_volume: parseFloat(entry.result.final_volume || entry.result.volume),
+          calculated_mt: entry.density
+            ? parseFloat(entry.result.final_volume || entry.result.volume) * parseFloat(entry.density)
+            : null,
+          user_name: null,
+          device_info: navigator.userAgent,
+          app_version: "1.0.0",
+        };
+      });
+
+      // Prepare summary data (total mass by fuel grade)
+      const summaryData = {
+        session_id: sessionId,
+        recorded_at: systemTimestamp,
+        report_date: reportDate,
+        total_tanks: completedSoundings.length,
+        total_mass_by_fuel_grade: totalMtByFuelGrade,
+        grand_total_mt: Object.values(totalMtByFuelGrade).reduce((sum, mt) => sum + mt, 0),
+        trim: parseFloat(globalTrim),
+        heel: globalHeel !== "" ? parseFloat(globalHeel) : null,
+      };
+
+      const payload = {
+        soundings: soundingsPayload,
+        summary: summaryData,
+      };
+
+      const normalizedUrl = lambdaUrl.replace(/\/+$/, "");
+      const response = await fetch(
+        `${normalizedUrl}/vessel/${currentVessel.vessel_id}/sync-soundings`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      setSubmitStatus({
+        message: `✅ Saved ${result.inserted} tank(s) + summary to cloud at ${new Date(systemTimestamp).toLocaleString()}`,
+        type: "success",
+      });
+
+      console.log("✓ Soundings submitted:", result);
+      console.log("✓ Session ID:", sessionId);
+      console.log("✓ Summary:", summaryData);
+
+      // Keep form data - DO NOT clear or refresh
+      setTimeout(() => setSubmitStatus({ message: "", type: "" }), 5000);
+    } catch (err) {
+      console.error("Error submitting soundings:", err);
+      setSubmitStatus({
+        message: `❌ Failed to submit: ${err.message}`,
+        type: "error",
+      });
+      setTimeout(() => setSubmitStatus({ message: "", type: "" }), 5000);
     }
   };
 
@@ -122,33 +297,29 @@ function App() {
       });
       return;
     }
+    
     updateTankEntry(index, { loading: true, error: "", result: null });
+    
     try {
-      const requestBody = {
-        compartment_id: parseInt(entry.compartment_id),
-        ullage: parseFloat(entry.ullage),
-        trim: parseFloat(globalTrim),
-      };
-      if (globalHeel !== "" && globalHeel !== null) {
-        requestBody.heel = parseFloat(globalHeel);
-      }
-      const response = await fetch(lambdaUrl + "/sounding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-      const data = await response.json();
-      if (data.success) {
-        updateTankEntry(index, { result: data.data, error: "" });
+      // Use offline interpolation
+      const result = await calculateSounding(
+        parseInt(entry.compartment_id),
+        parseFloat(entry.ullage),
+        parseFloat(globalTrim),
+        globalHeel !== "" ? parseFloat(globalHeel) : null
+      );
+      
+      if (result.success) {
+        updateTankEntry(index, { result: result, error: "" });
       } else {
         updateTankEntry(index, {
-          error: data.error || "Failed to fetch sounding data",
+          error: result.error || "Calculation failed",
           result: null,
         });
       }
     } catch (err) {
       updateTankEntry(index, {
-        error: "Request failed: " + err.message,
+        error: "Calculation error: " + err.message,
         result: null,
       });
     } finally {
@@ -251,7 +422,7 @@ function App() {
   const fetchBunkeringData = async (bunkerIndex, entryIndex) => {
     const bunker = bunkeringData[bunkerIndex];
     const entry = bunker.entries[entryIndex];
-    // Validation
+    
     const isValidCompartment =
       entry.compartment_id && entry.compartment_id.toString().trim() !== "";
     const isValidUllage =
@@ -264,6 +435,7 @@ function App() {
       bunker.trim !== null &&
       bunker.trim !== undefined &&
       bunker.trim.toString().trim() !== "";
+      
     if (!isValidCompartment || !isValidUllage || !isValidTrim) {
       const missingFields = [];
       if (!isValidCompartment) missingFields.push("tank");
@@ -274,40 +446,36 @@ function App() {
       });
       return;
     }
+    
     updateBunkeringEntry(bunkerIndex, entryIndex, {
       loading: true,
       error: "",
       result: null,
     });
+    
     try {
-      const requestBody = {
-        compartment_id: parseInt(entry.compartment_id),
-        ullage: parseFloat(entry.ullage),
-        trim: parseFloat(bunker.trim),
-      };
-      if (bunker.heel && bunker.heel.toString().trim() !== "") {
-        requestBody.heel = parseFloat(bunker.heel);
-      }
-      const response = await fetch(lambdaUrl + "/sounding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      });
-      const data = await response.json();
-      if (data.success) {
+      // Use offline interpolation
+      const result = await calculateSounding(
+        parseInt(entry.compartment_id),
+        parseFloat(entry.ullage),
+        parseFloat(bunker.trim),
+        bunker.heel && bunker.heel.toString().trim() !== "" ? parseFloat(bunker.heel) : null
+      );
+      
+      if (result.success) {
         updateBunkeringEntry(bunkerIndex, entryIndex, {
-          result: data.data,
+          result: result,
           error: "",
         });
       } else {
         updateBunkeringEntry(bunkerIndex, entryIndex, {
-          error: data.error || "Failed to fetch sounding data",
+          error: result.error || "Calculation failed",
           result: null,
         });
       }
     } catch (err) {
       updateBunkeringEntry(bunkerIndex, entryIndex, {
-        error: "Request failed: " + err.message,
+        error: "Calculation error: " + err.message,
         result: null,
       });
     } finally {
@@ -388,57 +556,18 @@ function App() {
     return hasCompartment && hasUllage && hasTrim && !entry.loading;
   };
 
-  const resetConnection = () => {
-    setConnected(false);
-    setCompartments([]);
-    setTankEntries([
-      {
-        id: Date.now(),
-        compartment_id: "",
-        fuel_grade: "",
-        ullage: "",
-        density: "",
-        temp: "",
-        result: null,
-        loading: false,
-        error: "",
-      },
-    ]);
-    setError("");
-    setGlobalTrim("");
-    setGlobalHeel("");
-    setReportDate(new Date().toISOString().slice(0, 10));
-    setBunkeringData([
-      {
-        id: 1,
-        name: "Bunker 1",
-        density: "",
-        temp: "",
-        totalQtyMT: "",
-        heel: "",
-        trim: "",
-        entries: [
-          {
-            id: Date.now(),
-            timestamp: new Date().toISOString().slice(0, 16),
-            compartment_id: "",
-            ullage: "",
-            result: null,
-            loading: false,
-            error: "",
-          },
-        ],
-      },
-    ]);
-    setNumBunkers(1);
-  };
-
   // UI
   if (!connected) {
     return (
       <div className="app">
         <div className="connection-container">
-          <h1>Tank Sounding & Bunkering Calculator</h1>
+          <div className="app-logo">
+            <div className="logo-icon">⚓</div>
+            <div className="logo-text">
+              <h1>BunkerWatch</h1>
+              <p className="logo-subtitle">Maritime Fuel Management</p>
+            </div>
+          </div>
           <div className="form-group">
             <label>Lambda Function URL</label>
             <input
@@ -456,9 +585,23 @@ function App() {
             disabled={loading}
             className="connect-btn"
           >
-            {loading ? "Connecting..." : "Connect & Load Compartments"}
+            {loading ? "Connecting..." : "Connect & Continue"}
           </button>
           {error && <div className="error-message">{error}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  if (!vesselSelected) {
+    return (
+      <div className="app">
+        <div className="main-container">
+          <VesselSelection 
+            lambdaUrl={lambdaUrl} 
+            onVesselSelected={handleVesselSelected}
+            onBack={() => setConnected(false)}
+          />
         </div>
       </div>
     );
@@ -468,16 +611,34 @@ function App() {
     <div className="app">
       <div className="main-container">
         <div className="header">
-          <h1>Tank Sounding & Bunkering Calculator</h1>
+          <div className="app-logo-small">
+            <span className="logo-icon-small">⚓</span>
+            <h1>BunkerWatch</h1>
+          </div>
           <div className="connection-status">
             <span className="status-connected">
-              ✅ Connected ({compartments.length} tanks loaded)
+              ✅ {compartments.length} tanks • {isOnline ? "Online" : "Offline"}
             </span>
-            <button onClick={resetConnection} className="change-url-btn">
-              Change URL
+            {/* <button onClick={() => setShowSettings(true)} className="settings-gear-btn" title="Settings">
+              ⚙️
             </button>
+            <button onClick={resetConnection} className="change-url-btn">
+              Change Vessel
+            </button> */}
           </div>
         </div>
+
+        {/* Vessel Info Banner */}
+        {currentVessel && (
+          <VesselSelection 
+            lambdaUrl={lambdaUrl} 
+            onVesselSelected={handleVesselSelected}
+          />
+        )}
+
+        {/* Sync Status Bar */}
+        <SyncStatus lambdaUrl={lambdaUrl} vesselId={currentVessel?.vessel_id} />
+
         {/* Tab Navigation */}
         <div className="tab-navigation">
           <button
@@ -495,6 +656,7 @@ function App() {
             Bunkering Monitor
           </button>
         </div>
+
         {/* Sounding Tab Content */}
         {activeTab === "sounding" && (
           <div className="tab-content">
@@ -688,10 +850,38 @@ function App() {
                     )}
                   </tbody>
                 </table>
+
+                {/* Submit to Cloud Button */}
+                <div className="submit-container">
+                  <button
+                    onClick={submitSoundingsToCloud}
+                    disabled={
+                      !isOnline ||
+                      tankEntries.filter(
+                        (e) =>
+                          e.result &&
+                          e.result.success &&
+                          e.compartment_id &&
+                          e.fuel_grade
+                      ).length === 0
+                    }
+                    className="submit-cloud-btn"
+                  >
+                    {isOnline
+                      ? "💾 Submit to Cloud"
+                      : "📵 Offline - Cannot Submit"}
+                  </button>
+                  {submitStatus.message && (
+                    <div className={`submit-status ${submitStatus.type}`}>
+                      {submitStatus.message}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
         )}
+
         {/* Bunkering Tab Content */}
         {activeTab === "bunkering" && (
           <div className="tab-content">
@@ -969,8 +1159,17 @@ function App() {
           </div>
         )}
       </div>
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <Settings
+          onClose={() => setShowSettings(false)}
+          onLambdaUrlUpdated={handleLambdaUrlUpdated}
+        />
+      )}
     </div>
   );
 }
 
 export default App;
+
