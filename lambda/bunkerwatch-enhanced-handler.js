@@ -1,4 +1,8 @@
 const { Pool } = require('pg');
+const zlib = require('zlib');
+const util = require('util');
+
+const gzip = util.promisify(zlib.gzip);
 
 // Database configuration - use environment variables
 const pool = new Pool({
@@ -1096,10 +1100,36 @@ exports.handler = async (event) => {
         if (method === 'GET' && path.match(/^\/vessel\/[^/]+\/data-package$/)) {
             const vesselId = pathParams.vessel_id || path.split('/')[2];
             const result = await generateVesselDataPackage(vesselId);
+            
+            // Compress large responses to avoid Lambda payload limit
+            const jsonString = JSON.stringify(result);
+            const jsonSize = Buffer.byteLength(jsonString, 'utf8');
+            
+            console.log(`Response size: ${Math.round(jsonSize / 1024)}KB`);
+            
+            // If response is > 5MB, compress it
+            if (jsonSize > 5 * 1024 * 1024) {
+                console.log('Compressing response with gzip...');
+                const compressed = await gzip(jsonString);
+                const compressedSize = Buffer.byteLength(compressed);
+                console.log(`Compressed size: ${Math.round(compressedSize / 1024)}KB (${Math.round(compressedSize / jsonSize * 100)}%)`);
+                
+                return {
+                    statusCode: 200,
+                    headers: {
+                        ...headers,
+                        'Content-Encoding': 'gzip',
+                        'Content-Type': 'application/json'
+                    },
+                    body: compressed.toString('base64'),
+                    isBase64Encoded: true
+                };
+            }
+            
             return {
                 statusCode: 200,
                 headers,
-                body: JSON.stringify(result)
+                body: jsonString
             };
         }
         
