@@ -62,7 +62,12 @@ export async function setVesselInfo(vesselData) {
  * Get all compartments for current vessel
  */
 export async function getCompartments() {
-  return await db.compartments.toArray();
+  const vessel = await getVesselInfo();
+  if (!vessel) {
+    return [];
+  }
+  // Filter compartments by current vessel_id for safety
+  return await db.compartments.where('vessel_id').equals(vessel.vessel_id).toArray();
 }
 
 /**

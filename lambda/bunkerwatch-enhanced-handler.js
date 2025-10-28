@@ -116,7 +116,7 @@ const generateVesselDataPackage = async (vesselId) => {
         
         // 2. Get compartments for this vessel
         const compartmentsQuery = `
-            SELECT compartment_id, compartment_name, 
+            SELECT compartment_id, vessel_id, compartment_name, 
                    total_net_volume_m3 as capacity
             FROM compartments
             WHERE vessel_id = $1
