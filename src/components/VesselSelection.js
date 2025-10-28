@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { getVesselInfo } from '../db/database';
 import { downloadVesselDataPackage, fetchVessels } from '../db/dataPackageService';
 
-function VesselSelection({ lambdaUrl, onVesselSelected, onBack }) {
+function VesselSelection({ lambdaUrl, onVesselSelected, onBack, disableAutoSelect = false }) {
   const [vessels, setVessels] = useState([]);
   const [selectedVesselId, setSelectedVesselId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -13,9 +13,12 @@ function VesselSelection({ lambdaUrl, onVesselSelected, onBack }) {
   const [currentVessel, setCurrentVessel] = useState(null);
   
   useEffect(() => {
-    loadCurrentVessel();
+    if (!disableAutoSelect) {
+      loadCurrentVessel();
+    }
     loadVessels();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [disableAutoSelect]);
   
   async function loadCurrentVessel() {
     const vessel = await getVesselInfo();
@@ -76,7 +79,7 @@ function VesselSelection({ lambdaUrl, onVesselSelected, onBack }) {
     setError('');
   }
   
-  if (currentVessel) {
+  if (currentVessel && !disableAutoSelect) {
     return (
       <div className="vessel-info-banner">
         <div className="vessel-current">

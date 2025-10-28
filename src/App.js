@@ -611,6 +611,7 @@ function App() {
           <VesselSelection 
             lambdaUrl={lambdaUrl} 
             onVesselSelected={handleVesselSelected}
+            disableAutoSelect={true}
             onBack={() => setConnected(false)}
           />
         </div>
@@ -641,6 +642,7 @@ function App() {
           <VesselSelection 
             lambdaUrl={lambdaUrl} 
             onVesselSelected={handleVesselSelected}
+            disableAutoSelect={false}
           />
         )}
 
