@@ -100,6 +100,8 @@ const getVesselInfo = async (vesselId) => {
  */
 const generateVesselDataPackage = async (vesselId) => {
     try {
+        console.log(`📦 [DATA-PACKAGE] Generating package for vessel_id: ${vesselId}`);
+        
         // 1. Get vessel info
         const vesselQuery = `
             SELECT vessel_id, vessel_name, imo_number
@@ -113,19 +115,33 @@ const generateVesselDataPackage = async (vesselId) => {
         }
         
         const vessel = vesselResult.rows[0];
+        console.log(`📦 [DATA-PACKAGE] Found vessel: ${vessel.vessel_name} (ID: ${vessel.vessel_id})`);
         
-        // 2. Get compartments for this vessel
+        // 2. Get compartments for this vessel - ONLY compartments with calibration data
         const compartmentsQuery = `
-            SELECT compartment_id, vessel_id, compartment_name, 
-                   total_net_volume_m3 as capacity
-            FROM compartments
-            WHERE vessel_id = $1
-            ORDER BY compartment_name
+            SELECT DISTINCT c.compartment_id, c.vessel_id, c.compartment_name, 
+                   c.total_net_volume_m3 as capacity
+            FROM compartments c
+            INNER JOIN main_sounding_trim_data mstd 
+                ON c.compartment_id = mstd.compartment_id 
+                AND c.vessel_id = mstd.vessel_id
+            WHERE c.vessel_id = $1
+            ORDER BY c.compartment_name
         `;
         const compartments = await pool.query(compartmentsQuery, [vesselId]);
+        console.log(`📦 [DATA-PACKAGE] Found ${compartments.rows.length} compartments WITH calibration data for vessel ${vessel.vessel_name}`);
         
         if (compartments.rows.length === 0) {
-            throw new Error('No compartments found for this vessel');
+            throw new Error('No compartments with calibration data found for this vessel');
+        }
+        
+        // Log first few compartments to verify they belong to correct vessel
+        if (compartments.rows.length > 0) {
+            console.log(`📦 [DATA-PACKAGE] Sample compartments:`, {
+                count: compartments.rows.length,
+                first: compartments.rows[0],
+                last: compartments.rows[compartments.rows.length - 1]
+            });
         }
         
         // 3. Get calibration data for each compartment
@@ -221,13 +237,18 @@ const generateVesselDataPackage = async (vesselId) => {
 /**
  * GET /vessel/{vessel_id}/compartments
  * Get compartments for specific vessel (alternative to /compartments with vessel filter)
+ * ONLY compartments with calibration data
  */
 const getVesselCompartments = async (vesselId) => {
     const query = `
-        SELECT compartment_id, compartment_name, total_net_volume_m3 as capacity
-        FROM compartments 
-        WHERE vessel_id = $1
-        ORDER BY compartment_name
+        SELECT DISTINCT c.compartment_id, c.vessel_id, c.compartment_name, 
+               c.total_net_volume_m3 as capacity
+        FROM compartments c
+        INNER JOIN main_sounding_trim_data mstd 
+            ON c.compartment_id = mstd.compartment_id 
+            AND c.vessel_id = mstd.vessel_id
+        WHERE c.vessel_id = $1
+        ORDER BY c.compartment_name
     `;
     const result = await pool.query(query, [vesselId]);
     

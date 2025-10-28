@@ -138,10 +138,21 @@ function App() {
   };
 
   const resetConnection = () => {
-    setConnected(false);
+    // Go back to vessel selection screen
     setVesselSelected(false);
     setCurrentVessel(null);
     setCompartments([]);
+    setTankEntries([{
+      id: Date.now(),
+      compartment_id: "",
+      fuel_grade: "",
+      ullage: "",
+      density: "",
+      temp: "",
+      result: null,
+      loading: false,
+      error: "",
+    }]);
   };
 
   // Submit soundings to cloud (with summary data)
@@ -612,6 +623,9 @@ function App() {
       <div className="main-container">
         <div className="header">
           <div className="app-logo-small">
+            <button onClick={resetConnection} className="back-to-main-btn" title="Back to Main">
+              ←
+            </button>
             <span className="logo-icon-small">⚓</span>
             <h1>BunkerWatch</h1>
           </div>
@@ -619,12 +633,6 @@ function App() {
             <span className="status-connected">
               ✅ {compartments.length} tanks • {isOnline ? "Online" : "Offline"}
             </span>
-            {/* <button onClick={() => setShowSettings(true)} className="settings-gear-btn" title="Settings">
-              ⚙️
-            </button>
-            <button onClick={resetConnection} className="change-url-btn">
-              Change Vessel
-            </button> */}
           </div>
         </div>
 
@@ -661,8 +669,8 @@ function App() {
         {activeTab === "sounding" && (
           <div className="tab-content">
             <div className="global-inputs">
-              <div className="form-group">
-                <label htmlFor="reportDate">Date:</label>
+              <div className="form-group compact">
+                <label htmlFor="reportDate">Date</label>
                 <input
                   type="date"
                   id="reportDate"
@@ -670,27 +678,27 @@ function App() {
                   onChange={(e) => setReportDate(e.target.value)}
                 />
               </div>
-              <div className="form-group">
-                <label htmlFor="globalTrim">Global Trim (m):</label>
+              <div className="form-group compact">
+                <label htmlFor="globalTrim">Trim (m)</label>
                 <input
                   type="number"
                   id="globalTrim"
                   value={globalTrim}
                   onChange={(e) => setGlobalTrim(e.target.value)}
-                  placeholder="e.g., 0.5"
+                  placeholder="0.5"
                   step="0.1"
                   min="-4.0"
                   max="4.0"
                 />
               </div>
-              <div className="form-group">
-                <label htmlFor="globalHeel">Global Heel (°):</label>
+              <div className="form-group compact">
+                <label htmlFor="globalHeel">Heel (°)</label>
                 <input
                   type="number"
                   id="globalHeel"
                   value={globalHeel}
                   onChange={(e) => setGlobalHeel(e.target.value)}
-                  placeholder="e.g., 1.0 (Optional)"
+                  placeholder="1.0"
                   step="0.1"
                   min="-3.0"
                   max="3.0"
@@ -699,8 +707,8 @@ function App() {
             </div>
             <div className="content-grid">
               <div className="input-section">
-                <h3>Tank Entries</h3>
-                <table className="tank-table">
+                <h3 className="section-title">Tank Entries</h3>
+                <table className="tank-table compact">
                   <thead>
                     <tr>
                       <th>Tank Name</th>
