@@ -177,13 +177,15 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  height: 48px;
   background: linear-gradient(135deg, var(--primary-navy) 0%, var(--primary-blue) 100%);
   color: #fff;
   margin: 0;
   border-radius: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: var(--shadow-xs);
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 48px;
 }
 
 .back-to-main-btn {
@@ -211,16 +213,19 @@ body {
 .connection-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.12);
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  margin-left: auto;
 }
 
 .status-connected {
-  color: var(--accent-teal);
+  color: #fff;
   font-weight: 600;
   font-size: var(--text-sm);
+  white-space: nowrap;
 }
 
 /* ===== Form Elements ===== */
@@ -870,23 +875,25 @@ body {
 
 @media (max-width: 768px) {
   .app {
-    padding: 10px;
+    padding: 8px;
   }
 
   .header {
-    flex-direction: column;
-    gap: 15px;
-    padding: 20px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
   }
 
   .app-logo-small {
-    width: 100%;
-    justify-content: center;
+    width: auto;
+    justify-content: flex-start;
   }
 
   .connection-status {
-    width: 100%;
-    justify-content: center;
+    width: auto;
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .tab-btn {
@@ -1619,32 +1626,36 @@ body {
 }
 
 .submit-cloud-btn {
-  background: var(--primary);
-  color: var(--white);
-  border: none;
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
+  background: var(--primary-blue);
+  color: #fff;
+  border: 1px solid var(--primary-blue);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: var(--text-md);
+  font-weight: 700;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   box-shadow: var(--shadow-sm);
-  min-width: 160px;
+  min-width: 180px;
   font-family: var(--font-family);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  height: 34px;
 }
 
 .submit-cloud-btn:hover:not(:disabled) {
-  background: var(--primary-dark);
+  background: var(--primary-navy);
+  border-color: var(--primary-navy);
+  box-shadow: var(--shadow-md);
 }
 
 .submit-cloud-btn:disabled {
   background: var(--gray-300);
+  border-color: var(--gray-300);
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .submit-status {
