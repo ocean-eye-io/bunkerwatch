@@ -17,8 +17,7 @@ function VesselSelection({ lambdaUrl, onVesselSelected, onBack, disableAutoSelec
       loadCurrentVessel();
     }
     loadVessels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disableAutoSelect]);
+  }, [disableAutoSelect, lambdaUrl]);
   
   async function loadCurrentVessel() {
     const vessel = await getVesselInfo();
