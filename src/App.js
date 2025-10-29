@@ -573,10 +573,19 @@ function App() {
       <div className="app">
         <div className="connection-container">
           <div className="app-logo">
-            <div className="logo-icon">⚓</div>
-            <div className="logo-text">
-              <h1>BunkerWatch</h1>
-              <p className="logo-subtitle">Maritime Fuel Management</p>
+            <img 
+              src="/bunkerwatch-logo.svg" 
+              alt="BunkerWatch" 
+              className="logo-icon-large"
+              width="120" 
+              height="120"
+            />
+            <div>
+              <h1>
+                <span className="logo-bunker">Bunker</span>
+                <span className="logo-watch">Watch</span>
+              </h1>
+              <p className="connection-subtitle">Maritime Tank Sounding & Bunkering</p>
             </div>
           </div>
           <div className="form-group">
@@ -627,8 +636,17 @@ function App() {
             <button onClick={resetConnection} className="back-to-main-btn" title="Back to Main">
               ←
             </button>
-            <span className="logo-icon-small">⚓</span>
-            <h1>BunkerWatch</h1>
+            <img 
+              src="/bunkerwatch-logo.svg" 
+              alt="BunkerWatch" 
+              className="logo-icon-animated"
+              width="48" 
+              height="48"
+            />
+            <h1>
+              <span className="logo-bunker">Bunker</span>
+              <span className="logo-watch">Watch</span>
+            </h1>
           </div>
           <div className="connection-status">
             <span className="status-connected">

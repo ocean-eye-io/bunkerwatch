@@ -107,10 +107,15 @@ function VesselSelection({ lambdaUrl, onVesselSelected, onBack, disableAutoSelec
   return (
     <div className="vessel-selection-container">
       <div className="vessel-selection-header">
-        <div className="header-icon">⚓</div>
+        <div className="vessel-selection-icon">
+          <img src="/bunkerwatch-logo-static.svg" alt="BunkerWatch" width="60" height="60" />
+        </div>
         <div>
-          <h2>Select Vessel</h2>
-          <p>Choose your vessel and download calibration data for offline use</p>
+          <h2>
+            <span style={{color: '#1a5490'}}>Bunker</span>
+            <span style={{color: '#14b8a6'}}>Watch</span>
+          </h2>
+          <p>Select your vessel to begin</p>
         </div>
       </div>
       
