@@ -268,6 +268,15 @@ const syncSoundings = async (vesselId, payload) => {
     const client = await pool.connect();
     
     try {
+        console.log(`[SYNC] Starting sync for vessel_id: ${vesselId} (type: ${typeof vesselId})`);
+        console.log(`[SYNC] Soundings count: ${payload.soundings?.length || 0}`);
+        console.log(`[SYNC] Summary present: ${!!payload.summary}`);
+        
+        // Log first sounding for debugging
+        if (payload.soundings && payload.soundings.length > 0) {
+            console.log(`[SYNC] Sample sounding:`, JSON.stringify(payload.soundings[0], null, 2));
+        }
+        
         await client.query('BEGIN');
         
         const soundings = payload.soundings || [];
@@ -372,7 +381,9 @@ const syncSoundings = async (vesselId, payload) => {
         
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('Error syncing soundings:', error);
+        console.error('[SYNC] Error syncing soundings:', error.message);
+        console.error('[SYNC] Error stack:', error.stack);
+        console.error('[SYNC] Vessel ID that failed:', vesselId);
         throw error;
     } finally {
         client.release();
@@ -1278,14 +1289,17 @@ exports.handler = async (event) => {
         };
         
     } catch (error) {
-        console.error('Lambda error:', error);
+        console.error('[LAMBDA] Error:', error.message);
+        console.error('[LAMBDA] Stack:', error.stack);
+        console.error('[LAMBDA] Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
         return {
             statusCode: 500,
             headers,
             body: JSON.stringify({
                 success: false,
                 error: 'Internal server error',
-                message: error.message
+                message: error.message,
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
             })
         };
     }
